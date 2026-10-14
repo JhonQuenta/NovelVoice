@@ -1,0 +1,24 @@
+# Datos locales y documentos privados
+data/
+mediciones/
+work/
+*.epub
+*.wav
+*.mp3
+*.m4a
+*.opus
+*.rvq
+# Pesos y ejecutables distribuidos fuera de Git
+models/
+runtime/*.exe
+runtime/*.dll
+*.zip
+*.7z
+# Entorno y credenciales
+.env
+.env.*
+!.env.example
+node_modules/
+__pycache__/
+*.pyc
+*.log

@@ -1,0 +1,15 @@
+{
+  "name": "novelvoice",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Narración local de EPUB en español con clonación de voz",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test tests.mjs test_paragraphs.mjs",
+    "test:epub": "python test_epub.py"
+  }
+}

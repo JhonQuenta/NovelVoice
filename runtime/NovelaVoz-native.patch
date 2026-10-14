@@ -1,0 +1,87 @@
+--- a/tools/tts-server.cpp
++++ b/tools/tts-server.cpp
+@@ -213,6 +213,7 @@
+         struct ov_tts_params p;
+         ov_tts_default_params(&p);
+         p.text = req.input.c_str();
++        p.mg_num_step = req.steps;
+         p.lang = req.lang.empty() ? lang.c_str() : req.lang.c_str();
+ 
+         // Copy the registered codes out under the lock: the synthesis runs
+@@ -255,7 +256,13 @@
+         p.on_chunk_user_data = (void *) sink_ptr;
+ 
+         struct ov_audio out = {};
++        // NovelaVoz WAV requests use exactly the CLI's buffered postprocessing.
++        if (req.format == "wav") {
++            p.on_chunk = nullptr;
++            p.on_chunk_user_data = nullptr;
++        }
+         enum ov_status  rc  = ov_synthesize(ov, &p, &out);
++        if (rc == OV_STATUS_OK && req.format == "wav") sink(out.samples, out.n_samples);
+         ov_audio_free(&out);
+         if (rc != OV_STATUS_OK) {
+             err = ov_last_error();
+--- a/src/tts-server.h
++++ b/src/tts-server.h
+@@ -29,6 +29,7 @@
+ #include <csignal>
+ #include <cstdint>
+ #include <cstdio>
++#include <cstdlib>
+ #include <functional>
+ #include <mutex>
+ #include <string>
+@@ -46,6 +47,7 @@
+     // random seed per request, matching the CLI convention; anything
+     // else forwards verbatim for reproducible output.
+     int64_t seed;
++    int steps;
+ };
+ 
+ // One voice registration parsed from the POST /v1/audio/voices JSON body.
+@@ -173,6 +175,15 @@
+         return false;
+     }
+     req.seed = seed ? yyjson_get_sint(seed) : -1;
++    yyjson_val * steps = yyjson_obj_get(root, "steps");
++    if (steps && (!yyjson_is_int(steps) ||
++        (yyjson_get_sint(steps) != 8 && yyjson_get_sint(steps) != 16 &&
++         yyjson_get_sint(steps) != 24 && yyjson_get_sint(steps) != 32))) {
++        err = "'steps' must be 8, 16, 24 or 32";
++        yyjson_doc_free(doc);
++        return false;
++    }
++    req.steps = steps ? (int) yyjson_get_sint(steps) : 32;
+ 
+     yyjson_doc_free(doc);
+ 
+@@ -408,6 +419,15 @@
+ static int tts_server_run(const tts_backend & be, const server_config & cfg) {
+     httplib::Server svr;
+     g_svr = &svr;
++    const char * token_env = std::getenv("NOVELAVOZ_ENGINE_TOKEN");
++    const std::string token = token_env ? token_env : "";
++    svr.set_pre_routing_handler([token](const httplib::Request & req, httplib::Response & res) {
++        if (!token.empty() && req.get_header_value("Authorization") != "Bearer " + token) {
++            tts_json_error(res, 401, "authentication_error", "unauthorized");
++            return httplib::Server::HandlerResponse::Handled;
++        }
++        return httplib::Server::HandlerResponse::Unhandled;
++    });
+ 
+     // per-operation socket idle timeouts. read is small (text in), write is
+     // generous to cover a long streamed utterance without tripping on a slow
+--- a/vendor/cpp-httplib/httplib.cpp
++++ b/vendor/cpp-httplib/httplib.cpp
+@@ -1464,8 +1464,8 @@
+   if (wpath.empty()) { return false; }
+ 
+   hFile_ =
+-      ::CreateFile2(wpath.c_str(), GENERIC_READ,
+-                    FILE_SHARE_READ | FILE_SHARE_WRITE, OPEN_EXISTING, NULL);
++      ::CreateFileW(wpath.c_str(), GENERIC_READ,
++                    FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+ 
+   if (hFile_ == INVALID_HANDLE_VALUE) { return false; }
+ 
